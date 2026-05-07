@@ -14,13 +14,13 @@ spec:
     metadata:
       name: "demo-app-{{env}}"
       annotations:
-        argocd-image-updater.argoproj.io/image-list: demo-app=<registry>/demo-app
+        argocd-image-updater.argoproj.io/image-list: demo-app=us-central1-docker.pkg.dev/gen-ai-pritha/demo-app/demo-app
         argocd-image-updater.argoproj.io/demo-app.update-strategy: digest
         argocd-image-updater.argoproj.io/write-back-method: git
     spec:
       project: default
       source:
-        repoURL: https://github.com/<org>/multi-cloud-golden-path
+        repoURL: https://github.com/pritha-athena93/multi-cloud-golden-path
         path: helm/demo-app
         targetRevision: HEAD
         helm:
@@ -33,6 +33,6 @@ spec:
       syncPolicy:
         automated:
           prune: true
-          selfHeal: "{{env}}" != "prod"
+          selfHeal: true
         syncOptions:
           - CreateNamespace=true

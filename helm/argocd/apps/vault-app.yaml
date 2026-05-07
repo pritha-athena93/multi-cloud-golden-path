@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/<org>/multi-cloud-golden-path
+    repoURL: https://github.com/pritha-athena93/multi-cloud-golden-path
     targetRevision: HEAD
     path: helm/vault
     helm:
