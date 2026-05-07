@@ -287,6 +287,55 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
 
 ---
 
+### 6. Access the Demo App
+
+Get the load balancer IP:
+
+```bash
+kubectl get ingress -n demo-app-dev
+# Note the ADDRESS column — e.g. 35.222.224.240
+```
+
+#### Option A — Local test via /etc/hosts (no real domain needed)
+
+```bash
+sudo sh -c 'echo "35.222.224.240  demo-app.example.com" >> /etc/hosts'
+```
+
+Then open `https://demo-app.example.com` in your browser. Accept the TLS warning (cert is self-signed because `demo-app.example.com` is a placeholder hostname).
+
+Remove the entry when done:
+```bash
+sudo sed -i '' '/demo-app.example.com/d' /etc/hosts   # macOS
+sudo sed -i '/demo-app.example.com/d' /etc/hosts       # Linux
+```
+
+#### Option B — Wire a real domain
+
+1. **Pick a hostname** and update `helm/demo-app/values.yaml`:
+   ```yaml
+   ingress:
+     host: app.yourdomain.com
+     tls:
+       clusterIssuer: letsencrypt-prod  # real cert from Let's Encrypt
+   ```
+
+2. **Create a DNS A record** pointing to the LB IP:
+
+   | Provider | How |
+   |---|---|
+   | AWS Route 53 | Hosted Zone → Create Record → A → `35.222.224.240` |
+   | GCP Cloud DNS | DNS zone → Add record set → A → `35.222.224.240` |
+   | Cloudflare / other | A record → `app.yourdomain.com` → `35.222.224.240` |
+
+3. **Wait for DNS propagation** (seconds to minutes), then:
+   ```bash
+   curl https://app.yourdomain.com
+   ```
+   cert-manager will auto-issue a Let's Encrypt TLS certificate once DNS resolves.
+
+---
+
 ## Environment Configuration
 
 Each cloud has three environments with separate Terraform state keys and sizing:
