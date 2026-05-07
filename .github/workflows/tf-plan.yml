@@ -1,0 +1,144 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  plan-aws:
+    name: Plan AWS
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform/aws
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.7.0"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::<account>:role/github-actions-tf-plan
+          aws-region: us-east-1
+        # Fallback: set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY secrets if OIDC unavailable
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform init -backend-config=backends/dev.hcl
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: terraform/aws
+          minimum_severity: HIGH
+
+      - name: Run checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform/aws
+          framework: terraform
+          quiet: true
+          check: CRITICAL
+
+      - name: Terraform plan
+        id: plan
+        run: terraform plan -var-file=environments/dev.tfvars -no-color -out=tfplan
+        continue-on-error: true
+
+      - name: Post plan to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `### AWS Terraform Plan
+            \`\`\`
+            ${{ steps.plan.outputs.stdout }}
+            \`\`\`
+            `;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+      - name: Check plan status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  plan-gcp:
+    name: Plan GCP
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform/gcp
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.7.0"
+
+      - name: Configure GCP credentials (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/<num>/locations/global/workloadIdentityPools/<pool>/providers/<provider>
+          service_account: github-actions-tf@<project>.iam.gserviceaccount.com
+        # Fallback: set GCP_CREDENTIALS secret (JSON key) if OIDC unavailable
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform init -backend-config=backends/dev.hcl
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: terraform/gcp
+          minimum_severity: HIGH
+
+      - name: Terraform plan
+        id: plan
+        run: terraform plan -var-file=environments/dev.tfvars -no-color
+        continue-on-error: true
+
+      - name: Post plan to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `### GCP Terraform Plan
+            \`\`\`
+            ${{ steps.plan.outputs.stdout }}
+            \`\`\`
+            `;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+      - name: Check plan status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1

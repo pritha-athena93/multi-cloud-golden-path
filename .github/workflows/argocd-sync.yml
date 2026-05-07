@@ -1,0 +1,40 @@
+name: ArgoCD Sync
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "helm/**"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o /usr/local/bin/argocd \
+            https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x /usr/local/bin/argocd
+
+      - name: Login to ArgoCD
+        run: |
+          argocd login ${{ secrets.ARGOCD_SERVER }} \
+            --auth-token ${{ secrets.ARGOCD_TOKEN }} \
+            --grpc-web
+
+      - name: Sync dev
+        run: |
+          argocd app sync demo-app-dev --prune
+          argocd app wait demo-app-dev --health --timeout 300
+
+      - name: Sync staging
+        run: |
+          argocd app sync demo-app-staging --prune
+          argocd app wait demo-app-staging --health --timeout 300

@@ -1,0 +1,63 @@
+name: Update Image Tag
+
+on:
+  workflow_run:
+    workflows: ["Docker Build and Push"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-tag:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.BOT_GITHUB_TOKEN }}
+
+      - name: Get image tag from upstream workflow
+        id: get_tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.payload.workflow_run.id,
+            });
+            // Tag is sha-<commit>
+            const sha = context.payload.workflow_run.head_sha.substring(0, 7);
+            return `sha-${sha}`;
+          result-encoding: string
+
+      - name: Update image tag in values.yaml
+        run: |
+          sed -i "s/^  tag: .*/  tag: ${{ steps.get_tag.outputs.result }}/" helm/demo-app/values.yaml
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "chore/image-tag-${{ steps.get_tag.outputs.result }}"
+          git add helm/demo-app/values.yaml
+          git commit -m "chore: update image tag to ${{ steps.get_tag.outputs.result }}"
+          git push origin "chore/image-tag-${{ steps.get_tag.outputs.result }}"
+
+      - name: Create PR or auto-merge
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `chore: update image tag to ${{ steps.get_tag.outputs.result }}`,
+              head: `chore/image-tag-${{ steps.get_tag.outputs.result }}`,
+              base: 'main',
+              body: 'Automated image tag update from docker-build workflow.',
+            });
+            console.log(`PR created: ${pr.data.html_url}`);

@@ -1,0 +1,103 @@
+{{- if eq .Values.workloadType "deployment" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "demo-app.fullname" . }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "demo-app.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "demo-app.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{- if .Values.vault.enabled }}
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: {{ .Values.vault.role | quote }}
+        vault.hashicorp.com/agent-inject-secret-db.env: {{ .Values.vault.dbSecretPath | quote }}
+        vault.hashicorp.com/agent-inject-template-db.env: |
+          {{`{{- with secret "`}}{{ .Values.vault.dbSecretPath }}{{`" -}}`}}
+          {{`DB_HOST={{ .Data.data.host }}`}}
+          {{`DB_PORT={{ .Data.data.port }}`}}
+          {{`DB_NAME={{ .Data.data.dbname }}`}}
+          {{`DB_USER={{ .Data.data.username }}`}}
+          {{`DB_PASSWORD={{ .Data.data.password }}`}}
+          {{`{{- end }}`}}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "demo-app.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.vault.enabled }}
+      initContainers:
+        - name: wait-for-vault
+          image: curlimages/curl:8.6.0
+          command:
+            - sh
+            - -c
+            - |
+              until curl -sf http://vault.vault.svc.cluster.local:8200/v1/sys/health \
+                | grep -q '"initialized":true.*"sealed":false'; do
+                echo "waiting for vault..."; sleep 5;
+              done
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+        - name: wait-for-vault-secret
+          image: curlimages/curl:8.6.0
+          command:
+            - sh
+            - -c
+            - |
+              until curl -sf \
+                -H "X-Vault-Role: {{ .Values.vault.role }}" \
+                http://vault.vault.svc.cluster.local:8200/v1/{{ .Values.vault.dbSecretPath }} \
+                | grep -q '"data"'; do
+                echo "waiting for db secret..."; sleep 5;
+              done
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

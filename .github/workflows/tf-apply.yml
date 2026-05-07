@@ -1,0 +1,106 @@
+name: Terraform Apply
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - develop
+    paths:
+      - "terraform/**"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      aws_changed: ${{ steps.changes.outputs.aws }}
+      gcp_changed: ${{ steps.changes.outputs.gcp }}
+      environment: ${{ steps.env.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            aws:
+              - 'terraform/aws/**'
+            gcp:
+              - 'terraform/gcp/**'
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref_name }}" == "staging" ]]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          else
+            echo "environment=dev" >> $GITHUB_OUTPUT
+          fi
+
+  apply-aws:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.aws_changed == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.detect-changes.outputs.environment }}
+    defaults:
+      run:
+        working-directory: terraform/aws
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.7.0"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::<account>:role/github-actions-tf-apply
+          aws-region: us-east-1
+
+      - name: Terraform init
+        run: terraform init -backend-config=backends/${{ needs.detect-changes.outputs.environment }}.hcl
+
+      - name: Terraform apply
+        run: |
+          terraform apply -auto-approve \
+            -var-file=environments/${{ needs.detect-changes.outputs.environment }}.tfvars
+
+  apply-gcp:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.gcp_changed == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.detect-changes.outputs.environment }}
+    defaults:
+      run:
+        working-directory: terraform/gcp
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.7.0"
+
+      - name: Configure GCP credentials (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/<num>/locations/global/workloadIdentityPools/<pool>/providers/<provider>
+          service_account: github-actions-tf@<project>.iam.gserviceaccount.com
+
+      - name: Terraform init
+        run: terraform init -backend-config=backends/${{ needs.detect-changes.outputs.environment }}.hcl
+
+      - name: Terraform apply
+        run: |
+          terraform apply -auto-approve \
+            -var-file=environments/${{ needs.detect-changes.outputs.environment }}.tfvars

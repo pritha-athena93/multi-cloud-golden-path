@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: demo-app
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - env: dev
+          - env: staging
+          - env: prod
+  template:
+    metadata:
+      name: "demo-app-{{env}}"
+      annotations:
+        argocd-image-updater.argoproj.io/image-list: demo-app=<registry>/demo-app
+        argocd-image-updater.argoproj.io/demo-app.update-strategy: digest
+        argocd-image-updater.argoproj.io/write-back-method: git
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/<org>/multi-cloud-golden-path
+        path: helm/demo-app
+        targetRevision: HEAD
+        helm:
+          valueFiles:
+            - values.yaml
+            - values-{{env}}.yaml
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "demo-app-{{env}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: "{{env}}" != "prod"
+        syncOptions:
+          - CreateNamespace=true

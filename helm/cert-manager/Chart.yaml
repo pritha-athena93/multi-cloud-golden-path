@@ -1,0 +1,9 @@
+apiVersion: v2
+name: cert-manager-config
+description: cert-manager ClusterIssuers for Let's Encrypt
+type: application
+version: 0.1.0
+dependencies:
+  - name: cert-manager
+    version: "1.14.4"
+    repository: "https://charts.jetstack.io"

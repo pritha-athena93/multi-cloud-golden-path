@@ -1,0 +1,27 @@
+vault:
+  server:
+    ha:
+      enabled: true   # false in dev
+      replicas: 3
+    dataStorage:
+      storageClass: gp3  # or standard for GCP
+    seal:
+      # AWS: auto-unseal via KMS (key ARN injected per cloud at deploy time)
+      awskms:
+        enabled: true   # set false on GCP
+        region: us-east-1
+        kms_key_id: ""  # injected via values-aws.yaml or ArgoCD ApplicationSet parameter
+
+      # GCP: auto-unseal via Cloud KMS
+      gcpckms:
+        enabled: false  # set true on GCP
+        project: ""
+        region: ""
+        key_ring: ""
+        crypto_key: vault-unseal
+
+  injector:
+    enabled: true
+
+  ui:
+    enabled: false  # true in dev only

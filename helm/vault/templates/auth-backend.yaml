@@ -1,0 +1,94 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-auth-backend-setup
+  namespace: vault
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      serviceAccountName: vault
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: vault-setup
+          image: hashicorp/vault:1.16.1
+          env:
+            - name: VAULT_ADDR
+              value: "http://vault.vault.svc.cluster.local:8200"
+          command:
+            - sh
+            - -c
+            - |
+              # Wait for Vault to be initialized and unsealed
+              until vault status -format=json 2>/dev/null | grep -q '"sealed":false'; do
+                echo "waiting for vault to unseal..."; sleep 5;
+              done
+
+              # Check if already initialized
+              INITIALIZED=$(vault status -format=json | python3 -c "import sys,json; print(json.load(sys.stdin)['initialized'])")
+
+              if [ "$INITIALIZED" = "False" ]; then
+                echo "Initializing Vault..."
+                vault operator init -format=json > /tmp/vault-init.json
+                # Store init output in a temporary K8s secret - operator must rotate immediately
+                kubectl create secret generic vault-init-keys \
+                  --from-file=init.json=/tmp/vault-init.json \
+                  -n vault --dry-run=client -o yaml | kubectl apply -f -
+              fi
+
+              # Enable Kubernetes auth
+              vault auth list | grep -q kubernetes || vault auth enable kubernetes
+
+              # Configure Kubernetes auth
+              vault write auth/kubernetes/config \
+                kubernetes_host="https://${KUBERNETES_PORT_443_TCP_ADDR}:443"
+
+              # Enable KV v2
+              vault secrets list | grep -q "^secret/" || vault secrets enable -path=secret kv-v2
+
+              # Read bootstrap DB credentials from K8s secret
+              DB_HOST=$(kubectl get secret db-bootstrap-credentials -n vault -o jsonpath='{.data.DB_HOST}' | base64 -d)
+              DB_PORT=$(kubectl get secret db-bootstrap-credentials -n vault -o jsonpath='{.data.DB_PORT}' | base64 -d)
+              DB_NAME=$(kubectl get secret db-bootstrap-credentials -n vault -o jsonpath='{.data.DB_NAME}' | base64 -d)
+              DB_USER=$(kubectl get secret db-bootstrap-credentials -n vault -o jsonpath='{.data.DB_USER}' | base64 -d)
+              DB_PASSWORD=$(kubectl get secret db-bootstrap-credentials -n vault -o jsonpath='{.data.DB_PASSWORD}' | base64 -d)
+
+              # Write DB credentials to Vault KV
+              vault kv put secret/demo-app/db \
+                host="$DB_HOST" \
+                port="$DB_PORT" \
+                dbname="$DB_NAME" \
+                username="$DB_USER" \
+                password="$DB_PASSWORD"
+
+              # Delete bootstrap K8s secret - Vault is now the sole store
+              kubectl delete secret db-bootstrap-credentials -n vault --ignore-not-found
+
+              # Write policy
+              vault policy write demo-app - <<'POLICY'
+              path "secret/data/demo-app/*" {
+                capabilities = ["read"]
+              }
+              POLICY
+
+              # Create Kubernetes auth role for demo-app
+              vault write auth/kubernetes/role/demo-app \
+                bound_service_account_names=demo-app \
+                bound_service_account_namespaces=demo-app,demo-app-dev,demo-app-staging,demo-app-prod \
+                policies=demo-app \
+                ttl=1h
+
+              echo "Vault setup complete."
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ALL]

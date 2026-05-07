@@ -1,0 +1,43 @@
+server:
+  certificate:
+    enabled: true
+    issuer:
+      kind: ClusterIssuer
+      name: letsencrypt-prod
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    tls:
+      - secretName: argocd-server-tls
+        hosts:
+          - argocd.example.com  # override per deployment
+
+configs:
+  params:
+    server.disable.auth: "false"
+    server.insecure: "false"
+
+  rbac:
+    policy.default: role:readonly
+    policy.csv: |
+      # Platform team: full admin
+      g, <org>:platform-team, role:admin
+
+      # Dev teams: sync + get their own apps, no cluster-level ops
+      p, role:deploy, applications, get,    */*, allow
+      p, role:deploy, applications, sync,   */*, allow
+      p, role:deploy, applications, action, */*, allow
+      p, role:deploy, repositories, get,    *, allow
+
+      g, <org>:dev-team, role:deploy
+    scopes: '[groups, email]'
+
+repoServer:
+  serviceAccount:
+    annotations: {}  # IRSA / WI annotation injected per cloud
+
+notifications:
+  enabled: false

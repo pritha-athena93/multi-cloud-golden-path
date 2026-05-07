@@ -1,0 +1,68 @@
+workloadType: deployment  # or statefulset
+
+image:
+  repository: ""  # set per cloud: <account>.dkr.ecr.<region>.amazonaws.com/demo-app
+                  # or <region>-docker.pkg.dev/<project>/demo-app/demo-app
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+serviceAccount:
+  create: true
+  annotations: {}  # IRSA / Workload Identity annotation injected per cloud
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+vault:
+  enabled: true
+  role: demo-app
+  dbSecretPath: secret/data/demo-app/db
+
+ingress:
+  enabled: true
+  className: nginx  # or alb / gce
+  host: demo-app.example.com
+  tls:
+    enabled: true
+    secretName: demo-app-tls
+    clusterIssuer: letsencrypt-prod
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+# Only used when workloadType: statefulset
+persistence:
+  enabled: false
+  storageClass: gp3  # or standard on GCP
+  size: 10Gi
+  accessMode: ReadWriteOnce
