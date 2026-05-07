@@ -51,3 +51,9 @@ variable "kms_key_id" {
 variable "node_sa_email" {
   type = string
 }
+
+variable "master_authorized_cidr_blocks" {
+  description = "CIDRs allowed to reach the private GKE API endpoint. Add bastion subnet CIDR to enable kubectl via IAP tunnel."
+  type        = list(string)
+  default     = []
+}

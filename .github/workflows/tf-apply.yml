@@ -95,7 +95,7 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/<num>/locations/global/workloadIdentityPools/<pool>/providers/<provider>
-          service_account: github-actions-tf@<project>.iam.gserviceaccount.com
+          service_account: github-actions-tf@gen-ai-pritha.iam.gserviceaccount.com
 
       - name: Terraform init
         run: terraform init -backend-config=backends/${{ needs.detect-changes.outputs.environment }}.hcl

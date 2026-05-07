@@ -4,10 +4,11 @@ resource "random_password" "db" {
 }
 
 resource "google_sql_database_instance" "this" {
-  name             = "${var.environment}-postgres"
-  database_version = "POSTGRES_15"
-  region           = var.region
-  project          = var.project_id
+  name                = "${var.environment}-postgres"
+  database_version    = "POSTGRES_15"
+  region              = var.region
+  project             = var.project_id
+  encryption_key_name = var.kms_key_id
 
   deletion_protection = var.environment == "prod"
 
@@ -29,8 +30,6 @@ resource "google_sql_database_instance" "this" {
         retained_backups = var.environment == "prod" ? 30 : 7
       }
     }
-
-    encryption_key_name = var.kms_key_id
   }
 }
 

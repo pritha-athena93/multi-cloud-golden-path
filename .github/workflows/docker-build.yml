@@ -38,7 +38,7 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/<num>/locations/global/workloadIdentityPools/<pool>/providers/<provider>
-          service_account: github-actions-registry@<project>.iam.gserviceaccount.com
+          service_account: github-actions-registry@gen-ai-pritha.iam.gserviceaccount.com
 
       - name: Login to Artifact Registry
         if: env.CLOUD_PROVIDER == 'gcp'
@@ -53,7 +53,7 @@ jobs:
             echo "registry=${{ steps.ecr_login.outputs.registry }}" >> $GITHUB_OUTPUT
             echo "image=${{ steps.ecr_login.outputs.registry }}/prod/demo-app" >> $GITHUB_OUTPUT
           else
-            echo "image=us-central1-docker.pkg.dev/<project>/demo-app/demo-app" >> $GITHUB_OUTPUT
+            echo "image=us-central1-docker.pkg.dev/gen-ai-pritha/demo-app/demo-app" >> $GITHUB_OUTPUT
           fi
 
       - name: Build image

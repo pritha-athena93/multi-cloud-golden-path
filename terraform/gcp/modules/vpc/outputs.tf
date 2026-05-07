@@ -10,6 +10,10 @@ output "public_subnet_id" {
   value = google_compute_subnetwork.public.id
 }
 
+output "public_subnet_cidr" {
+  value = google_compute_subnetwork.public.ip_cidr_range
+}
+
 output "private_subnet_id" {
   value = google_compute_subnetwork.private.id
 }

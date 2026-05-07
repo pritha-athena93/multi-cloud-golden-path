@@ -3,6 +3,7 @@ resource "google_container_cluster" "this" {
   location = var.region
   project  = var.project_id
 
+  deletion_protection      = var.environment == "prod"
   remove_default_node_pool = true
   initial_node_count       = 1
 
@@ -13,6 +14,16 @@ resource "google_container_cluster" "this" {
     enable_private_nodes    = true
     enable_private_endpoint = true
     master_ipv4_cidr_block  = var.master_ipv4_cidr
+  }
+
+  master_authorized_networks_config {
+    dynamic "cidr_blocks" {
+      for_each = var.master_authorized_cidr_blocks
+      content {
+        cidr_block   = cidr_blocks.value
+        display_name = "authorized-${cidr_blocks.key}"
+      }
+    }
   }
 
   ip_allocation_policy {
@@ -39,6 +50,9 @@ resource "google_container_cluster" "this" {
   }
 
   node_config {
+    disk_type         = "pd-standard"
+    boot_disk_kms_key = var.kms_key_id
+
     shielded_instance_config {
       enable_secure_boot          = true
       enable_integrity_monitoring = true
@@ -67,6 +81,7 @@ resource "google_container_node_pool" "this" {
 
   node_config {
     machine_type    = var.node_machine_type
+    disk_type       = "pd-standard"
     service_account = var.node_sa_email
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
 

@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 5.20"
     }
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 5.20"
+    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "~> 2.27"
@@ -30,6 +34,11 @@ terraform {
 }
 
 provider "google" {
+  project = var.project_id
+  region  = var.region
+}
+
+provider "google-beta" {
   project = var.project_id
   region  = var.region
 }
@@ -78,18 +87,21 @@ module "iam" {
 }
 
 module "gke" {
-  source           = "./modules/gke"
-  environment      = var.environment
-  region           = var.region
-  project_id       = var.project_id
-  gke_version      = var.gke_version
+  source            = "./modules/gke"
+  environment       = var.environment
+  region            = var.region
+  project_id        = var.project_id
+  gke_version       = var.gke_version
   node_machine_type = var.node_machine_type
-  node_min         = var.node_min
-  node_max         = var.node_max
-  private_subnet_id = module.vpc.private_subnet_id
-  master_ipv4_cidr = var.master_ipv4_cidr
-  kms_key_id       = module.kms.gke_key_id
-  node_sa_email    = module.iam.node_sa_email
+  node_min          = var.node_min
+  node_max          = var.node_max
+  vpc_name                      = module.vpc.vpc_name
+  private_subnet_id             = module.vpc.private_subnet_id
+  master_ipv4_cidr              = var.master_ipv4_cidr
+  kms_key_id                    = module.kms.gke_key_id
+  node_sa_email                 = module.iam.node_sa_email
+  master_authorized_cidr_blocks = [module.vpc.public_subnet_cidr]
+  depends_on                    = [module.kms]
 }
 
 module "artifact_registry" {
@@ -101,13 +113,13 @@ module "artifact_registry" {
 }
 
 module "cloudsql" {
-  source            = "./modules/cloudsql"
-  environment       = var.environment
-  region            = var.region
-  project_id        = var.project_id
-  private_network   = module.vpc.vpc_id
-  kms_key_id        = module.kms.cloudsql_key_id
-  depends_on        = [module.gke]
+  source          = "./modules/cloudsql"
+  environment     = var.environment
+  region          = var.region
+  project_id      = var.project_id
+  private_network = module.vpc.vpc_id
+  kms_key_id      = module.kms.cloudsql_key_id
+  depends_on      = [module.gke, module.kms]
 }
 
 module "lb" {
@@ -126,26 +138,4 @@ module "bastion" {
   project_id   = var.project_id
   subnet_id    = module.vpc.public_subnet_id
   bastion_sa_email = module.iam.bastion_sa_email
-}
-
-resource "helm_release" "cert_manager" {
-  name             = "cert-manager"
-  repository       = "https://charts.jetstack.io"
-  chart            = "cert-manager"
-  version          = "1.14.4"
-  namespace        = "cert-manager"
-  create_namespace = true
-  values           = [file("${path.module}/../../helm/cert-manager/values.yaml")]
-  depends_on       = [module.gke]
-}
-
-resource "helm_release" "argocd" {
-  name             = "argocd"
-  repository       = "https://argoproj.github.io/argo-helm"
-  chart            = "argo-cd"
-  version          = "6.7.3"
-  namespace        = "argocd"
-  create_namespace = true
-  depends_on       = [helm_release.cert_manager]
-  values           = [file("${path.module}/../../helm/argocd/install/values.yaml")]
 }

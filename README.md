@@ -37,7 +37,7 @@ Production-grade Kubernetes infrastructure on AWS (EKS) or GCP (GKE) via Terrafo
 ### 0. Clone and Configure
 
 ```bash
-git clone https://github.com/<org>/multi-cloud-golden-path.git
+git clone https://github.com/pritha-athena93/multi-cloud-golden-path.git
 cd multi-cloud-golden-path
 ```
 
@@ -91,17 +91,14 @@ gcloud services enable \
 gcloud config list
 ```
 
-Replace `<project>` placeholders with your GCP project ID:
+Manually replace `<project>` with your GCP project ID in these files:
 
-```bash
-GCP_PROJECT=$(gcloud config get-value project)
+- `.github/workflows/tf-plan.yml`
+- `.github/workflows/tf-apply.yml`
+- `.github/workflows/docker-build.yml`
+- `helm/demo-app/values.yaml`
 
-# macOS
-grep -rl '<project>' .github/ terraform/gcp/ helm/ | xargs sed -i '' "s/<project>/${GCP_PROJECT}/g"
-
-# Linux
-grep -rl '<project>' .github/ terraform/gcp/ helm/ | xargs sed -i "s/<project>/${GCP_PROJECT}/g"
-```
+These are GitHub Actions and Helm files — Terraform variables don't apply to them, so the project ID must be set directly.
 
 ---
 
@@ -158,6 +155,83 @@ aws eks update-kubeconfig --name dev-eks-cluster --region us-east-1
 ```bash
 gcloud container clusters get-credentials dev-gke-cluster \
   --region us-central1 --project my-gcp-project
+```
+
+### 3a. Whitelisting IPs for Private GKE API Access (GCP)
+
+The GKE control plane uses a private endpoint only (`enable_private_endpoint = true`). `kubectl` must originate from a CIDR in `master_authorized_networks_config` — the bastion subnet (`10.0.0.0/24`) is whitelisted by default via Terraform.
+
+**To add additional CIDRs** (e.g. another bastion, VPN CIDR), edit `master_authorized_cidr_blocks` in [terraform/gcp/main.tf](terraform/gcp/main.tf):
+
+```hcl
+module "gke" {
+  ...
+  master_authorized_cidr_blocks = [
+    module.vpc.public_subnet_cidr,  # bastion subnet — always include
+    "10.100.0.0/24",                # example: additional VPN subnet
+  ]
+}
+```
+
+Then apply:
+```bash
+cd terraform/gcp
+terraform apply -var-file=environments/dev.tfvars -var="project_id=<your-project>"
+```
+
+**To reach the cluster via IAP SSH tunnel through the bastion:**
+
+```bash
+# Terminal 1 — SSH to bastion with dynamic SOCKS5 port forwarding on local port 8888
+# -D 8888 opens a SOCKS5 proxy; -N skips executing a remote command
+gcloud compute ssh dev-bastion \
+  --tunnel-through-iap \
+  --zone=us-central1-a \
+  -- -D 8888 -N
+```
+
+```bash
+# Terminal 2 — point kubectl at the SOCKS5 proxy, then fetch credentials
+export HTTPS_PROXY=socks5://localhost:8888
+gcloud container clusters get-credentials dev-gke-cluster \
+  --region us-central1 --project <your-project>
+
+# Verify
+kubectl get nodes
+```
+
+Keep Terminal 1 open for the duration of your session. The bastion originates traffic from `10.0.0.0/24`, which is already in `master_authorized_networks_config`.
+
+---
+
+### 3b. Install cert-manager and ArgoCD (GCP — must run via IAP tunnel)
+
+The GKE cluster uses a private endpoint only. Helm cannot reach it from your local machine. Run these after opening the IAP tunnel (Step 3a):
+
+```bash
+# cert-manager
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+helm upgrade --install cert-manager jetstack/cert-manager \
+  --namespace cert-manager --create-namespace \
+  --version 1.14.4 \
+  -f helm/cert-manager/values.yaml
+
+# ArgoCD
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update
+helm upgrade --install argocd argo/argo-cd \
+  --namespace argocd --create-namespace \
+  --version 6.7.3 \
+  -f helm/argocd/install/values.yaml
+
+# NGINX ingress controller
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx --create-namespace \
+  --version 4.10.1 \
+  --set controller.service.type=LoadBalancer
 ```
 
 ---

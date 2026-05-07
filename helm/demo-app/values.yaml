@@ -2,7 +2,7 @@ workloadType: deployment  # or statefulset
 
 image:
   repository: ""  # set per cloud: <account>.dkr.ecr.<region>.amazonaws.com/demo-app
-                  # or <region>-docker.pkg.dev/<project>/demo-app/demo-app
+                  # or <region>-docker.pkg.dev/gen-ai-pritha/demo-app/demo-app
   tag: latest
   pullPolicy: IfNotPresent
 
