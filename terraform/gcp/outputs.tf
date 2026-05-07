@@ -23,3 +23,21 @@ output "cloudsql_connection_name" {
 output "bastion_instance_name" {
   value = var.enable_bastion ? module.bastion[0].instance_name : null
 }
+
+output "db_host" {
+  value     = module.cloudsql.private_ip
+  sensitive = true
+}
+
+output "db_name" {
+  value = module.cloudsql.db_name
+}
+
+output "db_user" {
+  value = module.cloudsql.db_user
+}
+
+output "db_password" {
+  value     = module.cloudsql.db_password
+  sensitive = true
+}

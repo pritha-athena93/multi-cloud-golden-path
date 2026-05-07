@@ -206,7 +206,30 @@ Keep Terminal 1 open for the duration of your session. The bastion originates tr
 
 ### 3b. Install cert-manager and ArgoCD (GCP — must run via IAP tunnel)
 
-The GKE cluster uses a private endpoint only. Helm cannot reach it from your local machine. Run these after opening the IAP tunnel (Step 3a):
+The GKE cluster uses a private endpoint only. Helm and kubectl cannot reach it from your local machine. Run these after opening the IAP tunnel (Step 3a).
+
+First, retrieve the DB credentials from Terraform output:
+
+```bash
+cd terraform/gcp
+terraform output -raw db_host      # DB_HOST
+terraform output -raw db_password  # DB_PASSWORD
+terraform output db_name           # DB_NAME  (appdb)
+terraform output db_user           # DB_USER  (appuser)
+```
+
+Create the bootstrap secret in the cluster (via the IAP tunnel):
+
+```bash
+kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic db-bootstrap-credentials \
+  --namespace vault \
+  --from-literal=DB_HOST=<db_host> \
+  --from-literal=DB_PORT=5432 \
+  --from-literal=DB_NAME=<db_name> \
+  --from-literal=DB_USER=<db_user> \
+  --from-literal=DB_PASSWORD=<db_password>
+```
 
 ```bash
 # cert-manager

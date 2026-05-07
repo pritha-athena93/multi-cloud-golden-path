@@ -45,18 +45,3 @@ resource "google_sql_user" "app" {
   password = random_password.db.result
   project  = var.project_id
 }
-
-resource "kubernetes_secret" "db_bootstrap" {
-  metadata {
-    name      = "db-bootstrap-credentials"
-    namespace = "vault"
-  }
-
-  data = {
-    DB_HOST     = google_sql_database_instance.this.private_ip_address
-    DB_PORT     = "5432"
-    DB_NAME     = google_sql_database.app.name
-    DB_USER     = google_sql_user.app.name
-    DB_PASSWORD = random_password.db.result
-  }
-}
